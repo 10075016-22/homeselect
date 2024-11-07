@@ -19,7 +19,14 @@ class DatabaseSeeder extends Seeder
 
             UserSeeder::class,
             ModuleSeeder::class,
-
+            TypeEmployeeSeeder::class,
+            EmployeeSeeder::class,
+            ClientSeeder::class,
+            OwnersSeeder::class,
+            ApartmentsSeeder::class,
+            ReservationSeeder::class,
+            IncidentsSeeder::class,
+            TaskSeeder::class
         ]);
     }
 }

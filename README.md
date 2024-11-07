@@ -80,8 +80,8 @@ php artisan serve
 ### Postman
 To perform various queries to the API endpoints, you can use the following .json files:
 
-- [Collections](./documentation/postman/api.json)
-- [Environment](./documentation/postman/environment.json)
+- [Collections](./documentation/postman/Collections.json)
+- [Environment](./documentation/postman/Homeselect.postman_environment.json)
 
 If you're unsure how to use these JSON files, please refer to this guide: [Importing and exporting Overview](https://learning.postman.com/docs/getting-started/importing-and-exporting/importing-and-exporting-overview/)
 
@@ -196,3 +196,150 @@ Aquí el una solución completamente funcional y eficiente dependerá de muchos 
 Modelo entidad relación para el caso de prueba
 
 ![ER-Model](./documentation/images/ER-Diagram.png)
+
+##### Ejercicio 9
+
+```sql
+SELECT a.name_apartment, COUNT(i.id) AS "Cantidad" FROM incidents i 
+INNER JOIN reservations r on i.id_reservation  = r.id 
+INNER JOIN apartments a on r.id_apartment = a.id
+GROUP BY a.name_apartment
+```
+
+![Exercise 9](./documentation/images/exercise-9.png)
+
+
+##### Ejercicio 10
+
+```sql
+SELECT i.id AS incident_id, a.id apartmen_id, a.name_apartment, a.address, COUNT(t.id) AS "Cantidad" FROM incidents i 
+INNER JOIN tasks t ON i.id = t.id_incident
+INNER JOIN reservations r ON r.id = i.id_reservation 
+INNER JOIN apartments a ON a.id = r.id_apartment 
+WHERE t.status = 'Not done'
+GROUP BY i.id, a.id, a.address
+HAVING COUNT(t.id) = (
+    SELECT COUNT(t2.id)
+    FROM incidents i2
+    INNER JOIN tasks t2 ON i2.id = t2.id_incident
+    INNER JOIN reservations r2 ON r2.id = i2.id_reservation
+    WHERE r2.id_apartment = a.id AND t2.status = 'Not done'
+    GROUP BY i2.id
+    ORDER BY COUNT(t2.id) DESC
+    LIMIT 1
+)
+ORDER BY Cantidad DESC, a.name_apartment;
+```
+
+- Utilizamos `COUNT(t.id)` para contar las tareas no solucionadas por incidencia.
+- Agrupamos por incidencia y apartamento usando `GROUP BY`.
+- Usamos una subconsulta en la cláusula `HAVING` para comparar el conteo de tareas no solucionadas de cada incidencia con el máximo conteo para ese apartamento.
+- La subconsulta encuentra el máximo número de tareas no solucionadas para cada apartamento.
+- Finalmente, ordenamos los resultados por el número de tareas no solucionadas en orden descendente y luego por el ID del apartamento.
+![Exercise 10](./documentation/images/exercise-10.png)
+
+##### Ejercicio 11
+
+```sql
+SELECT 
+    a.id AS property_id,
+    a.name_apartment,
+    COALESCE(SUM(CASE WHEN t.cost_responsible = 'CLIENT' THEN t.estimated_cost ELSE 0 END), 0) AS client_total,
+    COALESCE(SUM(CASE WHEN t.cost_responsible = 'OWNER' THEN t.estimated_cost ELSE 0 END), 0) AS owner_total,
+    COALESCE(SUM(CASE WHEN t.cost_responsible = 'HOMESELECT' THEN t.estimated_cost ELSE 0 END), 0) AS homeselect_total
+FROM apartments a
+LEFT JOIN reservations r ON a.id = r.id_apartment 
+LEFT JOIN incidents i ON r.id = i.id_reservation
+LEFT JOIN tasks t ON i.id = t.id_incident
+WHERE r.id = 1
+GROUP BY a.id, a.address 
+ORDER BY a.id;
+```
+
+![Excercise 11](./documentation/images/exercise-11.png)
+
+##### Ejercicio 12
+SQL para obtener la propiedad que más incidencias se le han reportado entre el `2024-04-01` al `2024-11-01`
+
+```sql
+SELECT a.id AS property_id, a.address AS property_address, COUNT(i.id) AS incident_count
+FROM apartments a
+JOIN reservations r ON a.id = r.id_apartment 
+JOIN incidents i ON r.id = i.id_reservation
+WHERE i.created_at BETWEEN '2024-04-01' AND '2024-11-11'
+GROUP BY a.id, a.address
+ORDER BY incident_count DESC LIMIT 1;
+```
+Se realizó una pequeña modificación debido a que no se contaba con registros de esas fechas
+
+![Excercise 12](./documentation/images/exercise-12.png)
+
+##### Ejercicio 13
+SQL para obtener el costo asumido más alto por homeselect del total de una
+incidencia (recuerde que una incidencia puede tener varias tareas que son las que
+tienen el asumido por).
+
+```sql
+SELECT 
+    i.id AS incident_id,
+    a.id AS apartment_id,
+    a.address AS apartment_address,
+    SUM(t.estimated_cost) AS total_homeselect_cost,
+    i.created_at AS incident_date,
+    COUNT(t.id) AS number_of_tasks
+FROM incidents i
+JOIN tasks t ON i.id = t.id_incident
+JOIN reservations r ON i.id_reservation = r.id
+JOIN apartments a ON r.id_apartment = a.id
+WHERE t.cost_responsible = 'Homeselect'
+GROUP BY i.id, a.id, a.address, i.created_at
+ORDER BY total_homeselect_cost DESC LIMIT 1;
+```
+
+- Se realiza la suma del costo estimado teniendo en cuenta el número de tareas asociadas a esa incidencia, en las que `Homeselect` asume los costos.
+
+![Excercise 13](./documentation/images/exercise-13.png)
+
+
+##### Ejercicio 14
+
+SQL para obtener el código de la reserva actual o el código de la próxima reserva de
+cada apartamento, nos debe entregar nombre del apartamento, fecha de inicio y
+fecha final de la reserva. Aclaración: si el apartamento el día de hoy está ocupado,
+debe entregar los datos de esa reserva actual; si el apartamento el día de hoy está
+vacío, debe entregar los datos de la próxima reserva.
+
+
+```sql
+SELECT 
+    a.id AS apartment_id,
+    a.name_apartment AS apartment_name,
+    a.address,
+    r.id AS reservation_id,
+    r.start_date,
+    r.end_date,
+    CASE 
+        WHEN r.start_date <= CURRENT_DATE AND r.end_date >= CURRENT_DATE THEN 'Actual'
+        WHEN r.start_date > CURRENT_DATE THEN 'Próxima reserva'
+        ELSE 'Ninguna reserva próxima'
+    END AS reservation_status
+FROM 
+    apartments a
+LEFT JOIN 
+    reservations r ON a.id = r.id_apartment 
+    AND r.id = (
+        SELECT r2.id FROM reservations r2 WHERE r2.id_apartment = a.id
+        AND ( ( r2.start_date <= CURRENT_DATE AND r2.end_date >= CURRENT_DATE) OR r2.start_date > CURRENT_DATE )
+        ORDER BY 
+            CASE 
+                WHEN r2.start_date <= CURRENT_DATE AND r2.end_date >= CURRENT_DATE THEN 0
+                ELSE r2.start_date
+            END
+        LIMIT 1
+    )
+ORDER BY a.id;
+```
+
+- Tecnicamente el proceso es validar inicialmente cuales son las fechas establecidas de las reserva, si en el momento hay reserva, existe una próxima fecha, o definitivamente nose tiene ningúna.
+
+![Excercise 14](./documentation/images/exercise-14.png)
